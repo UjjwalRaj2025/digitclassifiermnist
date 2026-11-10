@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MNIST Neural Digit Recognition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="grid-overlay"></div>
+
+  <div class="app-wrapper">
+    <!-- Header -->
+    <header class="app-header">
+      <h1 class="main-title">Handwritten Digit <span class="gradient-text">Classifier</span></h1>
+      <p class="subtitle">
+        Draw any single digit (0–9) on the interactive pad. The deep learning model will analyze stroke geometry and predict in real-time.
+      </p>
+    </header>
+
+    <!-- Controls Deck -->
+    <section class="controls-card">
+      <div class="control-group brush-control">
+        <div class="control-header">
+          <span class="control-label">Brush Size</span>
+          <span id="brushSizeVal" class="size-badge">22px</span>
+        </div>
+        <div class="slider-wrapper">
+          <input id="brush" type="range" min="8" max="40" value="22" class="range-slider">
+          <div class="brush-preview" title="Live stroke size">
+            <span id="brushDot" class="brush-dot"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-divider"></div>
+
+      <!-- Realtime Switch -->
+      <div class="control-group toggle-group">
+        <span class="control-label">Inference Mode</span>
+        <label class="custom-toggle" title="Toggle instant inference on stroke">
+          <input id="rt" type="checkbox" checked>
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-label">Realtime</span>
+        </label>
+      </div>
+
+      <div class="control-divider"></div>
+
+      <!-- Action Buttons -->
+      <div class="actions-group">
+        <button id="undoBtn" class="btn btn-secondary" title="Undo last stroke (Shortcut: Ctrl+Z or Z)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7v6h6"></path>
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path>
+          </svg>
+          <span>Undo</span>
+        </button>
+
+        <button id="clear" class="btn btn-secondary" title="Clear canvas (Shortcut: C)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span>Clear</span>
+        </button>
+
+        <button id="predictBtn" class="btn btn-primary" title="Run manual prediction (Shortcut: Enter)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Predict</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Main Workspace -->
+    <main class="workspace-grid">
+      <!-- Left: Drawing Stage -->
+      <div class="card canvas-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+            </div>
+            <span class="card-title">Drawing Canvas</span>
+          </div>
+          <span class="canvas-spec">280 × 280 px</span>
+        </div>
+
+        <div class="canvas-viewport">
+          <canvas id="canvas" width="280" height="280"></canvas>
+          <div class="canvas-guides">
+            <span class="guide-corner top-left"></span>
+            <span class="guide-corner top-right"></span>
+            <span class="guide-corner bottom-left"></span>
+            <span class="guide-corner bottom-right"></span>
+          </div>
+        </div>
+
+        <div class="canvas-footer-hints">
+          <span class="shortcut-pill"><kbd>C</kbd> Clear</span>
+          <span class="shortcut-pill"><kbd>Z</kbd> Undo</span>
+          <span class="shortcut-pill"><kbd>Enter</kbd> Predict</span>
+        </div>
+      </div>
+
+      <!-- Right: Neural Prediction & Analytics -->
+      <div class="card results-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <div class="card-icon emerald">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                <line x1="15" y1="9" x2="15.01" y2="9"></line>
+              </svg>
+            </div>
+            <span class="card-title">Inference Output</span>
+          </div>
+          <span id="inferenceStatus" class="status-indicator">Idle</span>
+        </div>
+
+        <!-- Highlight Hero Metric -->
+        <div class="prediction-hero">
+          <div class="pred-display">
+            <span class="pred-label">Predicted Digit</span>
+            <span id="pred" class="pred-value">—</span>
+          </div>
+          <div class="confidence-display">
+            <span class="confidence-label">Confidence</span>
+            <span id="confidenceVal" class="confidence-value">0.0%</span>
+            <div class="confidence-meter">
+              <div id="confidenceFill" class="confidence-fill" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Probabilities Distribution -->
+        <div class="distribution-section">
+          <div class="section-label">Softmax Probability Distribution (0–9)</div>
+          <div id="bars" class="probability-bars-list">
+            <!-- Rendered dynamically by script.js -->
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-meta">
+        <span>Designed &amp; Engineered by <strong>Ujjwal Raj</strong></span>
+        <span class="footer-dot">•</span>
+        <span class="tech-stack">FastAPI • TensorFlow / Keras • HTML5 Canvas</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
