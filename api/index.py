@@ -3,6 +3,8 @@ import io
 import base64
 from pathlib import Path
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
 import scipy.ndimage
@@ -20,6 +22,12 @@ app.add_middleware(
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MODEL_TFLITE = BASE_DIR / "mnist_cnn.tflite"
+STATIC_DIR = BASE_DIR / "static"
+INDEX_FILE = BASE_DIR / "index.html"
+
+# Mount static files if present
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 interpreter = None
 
@@ -90,6 +98,12 @@ def preprocess_mnist_image(image_bytes: bytes):
     # Normalize to [0, 1]
     arr_normalized = (np.clip(arr, 0.0, 255.0) / 255.0).astype(np.float32)
     return arr_normalized.reshape(1, 28, 28, 1)
+
+@app.get("/")
+async def serve_index():
+    if INDEX_FILE.exists():
+        return FileResponse(str(INDEX_FILE))
+    return HTMLResponse("<h1>Digit Classifier</h1>")
 
 @app.get("/api/health")
 @app.get("/health")
