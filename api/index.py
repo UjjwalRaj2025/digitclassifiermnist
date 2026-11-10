@@ -3,7 +3,7 @@ import io
 import base64
 from pathlib import Path
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
@@ -20,10 +20,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_TFLITE = BASE_DIR / "mnist_cnn.tflite"
-STATIC_DIR = BASE_DIR / "static"
-INDEX_FILE = BASE_DIR / "index.html"
+CURRENT_DIR = Path(__file__).resolve().parent
+BASE_DIR = CURRENT_DIR.parent
+
+# Locate model file
+MODEL_TFLITE = CURRENT_DIR / "mnist_cnn.tflite"
+if not MODEL_TFLITE.exists():
+    MODEL_TFLITE = BASE_DIR / "mnist_cnn.tflite"
+
+# Locate static & index files
+STATIC_DIR = CURRENT_DIR / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR = BASE_DIR / "static"
+
+INDEX_FILE = CURRENT_DIR / "index.html"
+if not INDEX_FILE.exists():
+    INDEX_FILE = BASE_DIR / "index.html"
 
 # Mount static files if present
 if STATIC_DIR.exists():
@@ -100,10 +112,12 @@ def preprocess_mnist_image(image_bytes: bytes):
     return arr_normalized.reshape(1, 28, 28, 1)
 
 @app.get("/")
+@app.get("/index.html")
 async def serve_index():
     if INDEX_FILE.exists():
-        return FileResponse(str(INDEX_FILE))
-    return HTMLResponse("<h1>Digit Classifier</h1>")
+        content = INDEX_FILE.read_text(encoding="utf-8")
+        return HTMLResponse(content=content)
+    return HTMLResponse("<h1>MNIST Digit Classifier</h1>")
 
 @app.get("/api/health")
 @app.get("/health")
