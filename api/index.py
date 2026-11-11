@@ -174,6 +174,9 @@ async def health_check():
 
 @app.post("/predict")
 @app.post("/api/predict")
+@app.post("/api/index.py")
+@app.post("/api/index")
+@app.post("/api")
 async def predict(request: Request):
     content_type = request.headers.get("content-type", "")
     image_bytes = None
@@ -209,3 +212,13 @@ async def predict(request: Request):
         "confidence": confidence,
         "probabilities": probabilities
     }
+
+@app.api_route("/{full_path:path}", methods=["GET", "POST"])
+async def catch_all(request: Request, full_path: str):
+    if request.method == "POST":
+        return await predict(request)
+    if INDEX_FILE.exists():
+        content = INDEX_FILE.read_text(encoding="utf-8")
+        return HTMLResponse(content=content)
+    return HTMLResponse("<h1>MNIST Digit Classifier</h1>")
+
