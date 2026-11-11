@@ -7,7 +7,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image, ImageOps
-import scipy.ndimage
 import numpy as np
 
 app = FastAPI(title="MNIST Digit Classifier")
@@ -23,12 +22,11 @@ app.add_middleware(
 CURRENT_DIR = Path(__file__).resolve().parent
 BASE_DIR = CURRENT_DIR.parent
 
-# Locate model file
-MODEL_TFLITE = CURRENT_DIR / "mnist_cnn.tflite"
-if not MODEL_TFLITE.exists():
-    MODEL_TFLITE = BASE_DIR / "mnist_cnn.tflite"
+# Locate model files
+WEIGHTS_NPZ = CURRENT_DIR / "mnist_weights.npz"
+if not WEIGHTS_NPZ.exists():
+    WEIGHTS_NPZ = BASE_DIR / "mnist_weights.npz"
 
-# Locate static & index files
 STATIC_DIR = CURRENT_DIR / "static"
 if not STATIC_DIR.exists():
     STATIC_DIR = BASE_DIR / "static"
@@ -41,27 +39,78 @@ if not INDEX_FILE.exists():
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-interpreter = None
+# Load weights for pure NumPy ultra-fast inference (no heavy TF or C++ deps)
+w_conv1 = None
+b_conv1 = None
+w_conv2 = None
+b_conv2 = None
+w_dense1 = None
+b_dense1 = None
+w_dense2 = None
+b_dense2 = None
 
-def get_interpreter():
-    global interpreter
-    if interpreter is not None:
-        return interpreter
+def load_weights():
+    global w_conv1, b_conv1, w_conv2, b_conv2, w_dense1, b_dense1, w_dense2, b_dense2
+    if w_conv1 is not None:
+        return
+    data = np.load(str(WEIGHTS_NPZ))
+    w_conv1 = data['layer_0_weights']
+    b_conv1 = data['layer_0_biases']
+    w_conv2 = data['layer_2_weights']
+    b_conv2 = data['layer_2_biases']
+    w_dense1 = data['layer_5_weights']
+    b_dense1 = data['layer_5_biases']
+    w_dense2 = data['layer_7_weights']
+    b_dense2 = data['layer_7_biases']
 
-    # Try LiteRT / TFLite runtime first (for Vercel serverless)
-    try:
-        from ai_edge_litert.interpreter import Interpreter
-        interpreter = Interpreter(model_path=str(MODEL_TFLITE))
-    except Exception:
-        try:
-            from tflite_runtime.interpreter import Interpreter
-            interpreter = Interpreter(model_path=str(MODEL_TFLITE))
-        except Exception:
-            import tensorflow as tf
-            interpreter = tf.lite.Interpreter(model_path=str(MODEL_TFLITE))
+def conv2d(x, w, b):
+    H, W, Cin = x.shape
+    kH, kW, _, Cout = w.shape
+    outH, outW = H - kH + 1, W - kW + 1
+    out = np.zeros((outH, outW, Cout), dtype=np.float32)
+    for i in range(kH):
+        for j in range(kW):
+            x_slice = x[i:i+outH, j:j+outW, :]
+            out += np.tensordot(x_slice, w[i, j], axes=([2], [0]))
+    out += b
+    return np.maximum(out, 0)
 
-    interpreter.allocate_tensors()
-    return interpreter
+def maxpool2d(x):
+    H, W, C = x.shape
+    outH, outW = H // 2, W // 2
+    x_even = x[:outH * 2, :outW * 2, :]
+    return x_even.reshape(outH, 2, outW, 2, C).max(axis=(1, 3))
+
+def predict_cnn_numpy(x_28_28_1):
+    load_weights()
+    c1 = conv2d(x_28_28_1, w_conv1, b_conv1)
+    p1 = maxpool2d(c1)
+    c2 = conv2d(p1, w_conv2, b_conv2)
+    p2 = maxpool2d(c2)
+    flat = p2.flatten()
+    d1 = np.maximum(np.dot(flat, w_dense1) + b_dense1, 0)
+    logits = np.dot(d1, w_dense2) + b_dense2
+    exp_logits = np.exp(logits - np.max(logits))
+    return exp_logits / np.sum(exp_logits)
+
+def center_of_mass(arr):
+    total = np.sum(arr)
+    if total == 0:
+        return 14.0, 14.0
+    y_coords, x_coords = np.indices(arr.shape)
+    cy = np.sum(y_coords * arr) / total
+    cx = np.sum(x_coords * arr) / total
+    return cy, cx
+
+def shift_2d(arr, sy, sx):
+    res = np.zeros_like(arr)
+    H, W = arr.shape
+    y1, y2 = max(0, sy), min(H, H + sy)
+    x1, x2 = max(0, sx), min(W, W + sx)
+    sy1, sy2 = max(0, -sy), min(H, H - sy)
+    sx1, sx2 = max(0, -sx), min(W, W - sx)
+    res[y1:y2, x1:x2] = arr[sy1:sy2, sx1:sx2]
+    return res
 
 def preprocess_mnist_image(image_bytes: bytes):
     img = Image.open(io.BytesIO(image_bytes)).convert('L')
@@ -101,15 +150,14 @@ def preprocess_mnist_image(image_bytes: bytes):
 
     # Center of mass alignment
     arr = np.array(centered_img, dtype=np.float32)
-    cy, cx = scipy.ndimage.center_of_mass(arr)
-    if not (np.isnan(cy) or np.isnan(cx)):
-        shift_x = int(np.clip(np.round(14.0 - cx), -4, 4))
-        shift_y = int(np.clip(np.round(14.0 - cy), -4, 4))
-        arr = scipy.ndimage.shift(arr, (shift_y, shift_x), mode='constant', cval=0.0)
+    cy, cx = center_of_mass(arr)
+    shift_x = int(np.clip(np.round(14.0 - cx), -4, 4))
+    shift_y = int(np.clip(np.round(14.0 - cy), -4, 4))
+    arr = shift_2d(arr, shift_y, shift_x)
 
     # Normalize to [0, 1]
     arr_normalized = (np.clip(arr, 0.0, 255.0) / 255.0).astype(np.float32)
-    return arr_normalized.reshape(1, 28, 28, 1)
+    return arr_normalized.reshape(28, 28, 1)
 
 @app.get("/")
 @app.get("/index.html")
@@ -151,17 +199,10 @@ async def predict(request: Request):
     if processed is None:
         return {"prediction": "-", "probabilities": [0.0] * 10, "confidence": 0.0}
 
-    interp = get_interpreter()
-    input_details = interp.get_input_details()
-    output_details = interp.get_output_details()
-
-    interp.set_tensor(input_details[0]['index'], processed)
-    interp.invoke()
-    preds = interp.get_tensor(output_details[0]['index'])[0]
-
-    predicted_digit = int(np.argmax(preds))
-    confidence = float(np.max(preds))
-    probabilities = [float(p) for p in preds]
+    probs = predict_cnn_numpy(processed)
+    predicted_digit = int(np.argmax(probs))
+    confidence = float(np.max(probs))
+    probabilities = [float(p) for p in probs]
 
     return {
         "prediction": predicted_digit,

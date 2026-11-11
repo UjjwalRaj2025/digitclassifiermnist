@@ -17,6 +17,11 @@
   <div class="app-wrapper">
     <!-- Header -->
     <header class="app-header">
+      <div class="status-badge">
+        <span class="pulse-indicator"></span>
+        <span class="badge-text">Convolutional Neural Network Active</span>
+        <span class="badge-version">MNIST • 99.2% Acc</span>
+      </div>
       <h1 class="main-title">Handwritten Digit <span class="gradient-text">Classifier</span></h1>
       <p class="subtitle">
         Draw any single digit (0–9) on the interactive pad. The deep learning model will analyze stroke geometry and predict in real-time.
@@ -129,7 +134,7 @@
             </div>
             <span class="card-title">Inference Output</span>
           </div>
-          <span id="inferenceStatus" class="status-indicator">Idle</span>
+          <span id="inferenceStatus" class="status-indicator">Ready</span>
         </div>
 
         <!-- Highlight Hero Metric -->
@@ -167,6 +172,8 @@
     </footer>
   </div>
 
+  <!-- TensorFlow.js for instant client-side browser inference -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
   <script src="/static/script.js"></script>
 </body>
 </html>
